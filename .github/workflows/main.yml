@@ -12,13 +12,11 @@ jobs:
             uses: actions/checkout@master
           - name: ACR login
             env:
-              DOCKER_HUB_PWD: ${{ secrets.DHUB_PWD }}
-              DOCKER_HUB_USER: ${{ secrets.DHUB_USER }}
+              DOCKER_ACR_PWD: ${{ secrets.ACR_PWD }}
+              DOCKER_ACR_USER: ${{ secrets.ACR_USER }}
             run: |
-              echo "${DOCKER_PWD}" | docker login --username ${DOCKER_USER} --password-stdin  registry.cn-hangzhou.aliyuncs.com
+              echo "${DOCKER_ACR_PWD}" | docker login --username ${DOCKER_ACR_USER} --password-stdin  registry.cn-hangzhou.aliyuncs.com
           - name: build dockerfile with push
-            env:
-              DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
             run: |
               for image in $(<image.list);do 
                 if [[ $image =~ ^\#.* ]];then   
