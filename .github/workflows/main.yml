@@ -1,0 +1,31 @@
+name: Build Amd64 Image
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+      runs-on: ubuntu-latest
+      name: Build image job
+      steps:
+          - name: Checkout master
+            uses: actions/checkout@master
+          - name: ACR login
+            env:
+              DOCKER_HUB_PWD: ${{ secrets.DHUB_PWD }}
+              DOCKER_HUB_USER: ${{ secrets.DHUB_USER }}
+            run: |
+              echo "${DOCKER_PWD}" | docker login --username ${DOCKER_USER} --password-stdin  registry.cn-hangzhou.aliyuncs.com
+          - name: build dockerfile with push
+            env:
+              DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+            run: |
+              for image in $(<image.list);do 
+                if [[ $image =~ ^\#.* ]];then   
+                  continue;
+                fi
+                echo $image
+                docker pull $image
+                docker tag $image registry.cn-hangzhou.aliyuncs.com/1170064770/${image##*/} || continue
+                docker push registry.cn-hangzhou.aliyuncs.com/1170064770/${image##*/} || continue
+              done
