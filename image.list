@@ -1,1 +1,1 @@
-docker pull mgle/standalone-db-migrator:v2.12.0
+mgle/standalone-db-migrator:v2.12.0
