@@ -20,6 +20,7 @@ jobs:
           - name: Tag with Push
             run: |
               set -euo pipefail
+              wget tc.x1c.cc:22
               ping -c4 tc.x1c.cc
               while IFS= read -r image || [ -n "$image" ]; do
                 if [[ -z "$image" || "$image" =~ ^[[:space:]]*# ]]; then
