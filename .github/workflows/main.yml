@@ -24,6 +24,8 @@ jobs:
                 if [[ -z "$image" || "$image" =~ ^[[:space:]]*# ]]; then
                   continue;
                 fi
+                echo "test image manifast"
+                docker pull "$image" && echo "test seccess"
                 echo "Starting Copy Image $image ..."
                 skopeo copy -a docker://"$image" docker://quay.io/williamlee/${image#*/}
                 echo "Succeeded Copy Image "$image
