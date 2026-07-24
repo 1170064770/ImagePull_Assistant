@@ -1,2 +1,1 @@
-# imagepull
-#将需要下载的容器镜像写再image.list中就会自动将镜像同步至阿里云镜像仓库
+##将需要下载的容器镜像写入image.list中就会自动将双架构镜像同步至quay.io/williamlee/下
