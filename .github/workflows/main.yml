@@ -1,4 +1,4 @@
-name: Build Amd64 Image
+name: Copy Image
 on:
   push:
     branches:
@@ -6,24 +6,25 @@ on:
 jobs:
   build:
       runs-on: ubuntu-latest
-      name: Build image job
+      name: Copy Multi-Architecture Image Job
       steps:
-          - name: Checkout master
-            uses: actions/checkout@master
-          - name: ACR login
+          - name: Actions Version V4
+            uses: actions/checkout@v4
+          - name: Repo Login
             env:
-              DOCKER_ACR_PWD: ${{ secrets.ACR_PWD }}
-              DOCKER_ACR_USER: ${{ secrets.ACR_USER }}
+              REPO_USER: ${{ secrets.REPO_USER }}
+              REPO_PWD: ${{ secrets.REPO_PWD }}
             run: |
-              echo "${DOCKER_ACR_PWD}" | docker login --username ${DOCKER_ACR_USER} --password-stdin  registry.cn-hangzhou.aliyuncs.com
-          - name: build dockerfile with push
+              set -euo pipefail
+              echo "${REPO_PWD}" | skopeo login quay.io --username "${REPO_USER}" --password-stdin
+          - name: Tag with Push
             run: |
-              for image in $(<image.list);do 
-                if [[ $image =~ ^\#.* ]];then   
+              set -euo pipefail
+              while IFS= read -r image || [ -n "$image" ]; do
+                if [[ -z "$image" || "$image" =~ ^[[:space:]]*# ]]; then
                   continue;
                 fi
-                echo $image
-                docker pull $image
-                docker tag $image registry.cn-hangzhou.aliyuncs.com/1170064770/${image##*/} || continue
-                docker push registry.cn-hangzhou.aliyuncs.com/1170064770/${image##*/} || continue
-              done
+                echo "Starting Copy Image $image ..."
+                skopeo copy -a docker://"$image" docker://quay.io/williamlee/${image#*/}
+                echo "Succeeded Copy Image "$image
+              done < image.list
