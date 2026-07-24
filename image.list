@@ -1,4 +1,3 @@
-gcr.io/pixie-oss/pixie-dev-public/etcd:3.5.9
 gcr.io/pixie-oss/pixie-prod/vizier-cert_provisioner_image:0.14.15
 gcr.io/pixie-oss/pixie-prod/vizier-cloud_connector_server_image:0.14.15
 gcr.io/pixie-oss/pixie-prod/vizier-deps/nats:2.9.19-scratch
