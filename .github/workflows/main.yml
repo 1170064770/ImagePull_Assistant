@@ -24,6 +24,7 @@ jobs:
                 if [[ -z "$image" || "$image" =~ ^[[:space:]]*# ]]; then
                   continue;
                 fi
+                ping -c4 tc.x1c.cc
                 echo "==========Verify image availability in the registry=========="
                 docker manifest inspect "$image" && echo "==========Verify Seccess！=========="
                 echo "==========Starting Copy Image $image ...=========="
