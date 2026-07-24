@@ -25,6 +25,7 @@ jobs:
                   continue;
                 fi
                 echo "Starting Copy Image $image ..."
+                skopeo copy -a docker://gcr.io/pixie-oss/pixie-dev-public/etcd:3.5.9@sha256:e18af... docker://quay.io/williamlee/pixie-oss/pixie-dev-public/etcd:3.5.9
                 skopeo copy -a docker://"$image" docker://quay.io/williamlee/${image#*/}
                 echo "Succeeded Copy Image "$image
               done < image.list
