@@ -1,34 +1,204 @@
-name: Copy Image
+name: Download Multi-Architecture Images And Release
+
 on:
   push:
     branches:
       - main
+
+  # 支持在 GitHub Actions 页面手动执行
+  workflow_dispatch:
+
+# 创建 Tag 和 Release 所需权限
+permissions:
+  contents: write
+
+# 避免同一分支同时运行多个发布任务
+concurrency:
+  group: image-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-      runs-on: ubuntu-latest
-      name: Copy Multi-Architecture Image Job
-      steps:
-          - name: Actions Version V4
-            uses: actions/checkout@v4
-          - name: Repo Login
-            env:
-              REPO_USER: ${{ secrets.REPO_USER }}
-              REPO_PWD: ${{ secrets.REPO_PWD }}
-            run: |
-              set -euo pipefail
-              echo "${REPO_PWD}" | skopeo login quay.io --username "${REPO_USER}" --password-stdin
-          - name: Tag with Push
-            run: |
-              set -euo pipefail
-              wget tc.x1c.cc:22
-              ping -c4 tc.x1c.cc
-              while IFS= read -r image || [ -n "$image" ]; do
-                if [[ -z "$image" || "$image" =~ ^[[:space:]]*# ]]; then
-                  continue;
-                fi
-                echo "==========Verify image availability in the registry=========="
-                docker manifest inspect "$image" && echo "==========Verify Seccess！=========="
-                echo "==========Starting Copy Image $image ...=========="
-                skopeo copy -a docker://"$image" docker://quay.io/williamlee/${image#*/}
-                echo "==========Succeeded Copy Image $image==========“
-              done < image.list
+    runs-on: ubuntu-latest
+    name: Download And Release Multi-Architecture Images
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate release timestamp
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # GitHub Runner 默认使用 UTC 时间
+          RELEASE_VERSION="$(TZ=Asia/Shanghai date '+%Y%m%d%H%M%S')"
+          PACKAGE_NAME="multi-arch-images-${RELEASE_VERSION}.tar.gz"
+
+          echo "version=${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "package_name=${PACKAGE_NAME}" >> "${GITHUB_OUTPUT}"
+
+          echo "Release version: ${RELEASE_VERSION}"
+          echo "Package name: ${PACKAGE_NAME}"
+
+      - name: Download multi-architecture images
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "image.list" ]]; then
+            echo "::error::image.list does not exist in the repository root"
+            exit 1
+          fi
+
+          OUTPUT_DIR="multi-arch-images-${RELEASE_VERSION}"
+          mkdir -p "${OUTPUT_DIR}/images"
+
+          # 保存原始镜像列表
+          cp image.list "${OUTPUT_DIR}/image.list"
+
+          # 创建归档文件与原始镜像之间的映射表
+          printf "archive_file\tsource_image\n" \
+            > "${OUTPUT_DIR}/image-mapping.tsv"
+
+          IMAGE_COUNT=0
+
+          while IFS= read -r image || [[ -n "${image}" ]]; do
+            # 去除 Windows 文本文件可能包含的回车符
+            image="${image%$'\r'}"
+
+            # 去除首尾空白
+            image="${image#"${image%%[![:space:]]*}"}"
+            image="${image%"${image##*[![:space:]]}"}"
+
+            # 跳过空行和注释行
+            if [[ -z "${image}" || "${image}" == \#* ]]; then
+              continue
+            fi
+
+            IMAGE_COUNT=$((IMAGE_COUNT + 1))
+
+            # 将镜像名转换成安全的文件名
+            # 例如：
+            # quay.io/example/app:v1 -> quay.io_example_app_v1
+            safe_name="$(printf '%s' "${image}" \
+              | sed 's|^[a-zA-Z0-9+.-]*://||' \
+              | sed 's|[^a-zA-Z0-9._-]|_|g')"
+
+            archive_file="${safe_name}.oci.tar"
+            archive_path="${OUTPUT_DIR}/images/${archive_file}"
+
+            echo "============================================================"
+            echo "Source image : ${image}"
+            echo "Archive file : ${archive_path}"
+            echo "============================================================"
+
+            echo "Inspecting remote image..."
+            skopeo inspect --raw "docker://${image}" > /dev/null
+
+            echo "Downloading all architectures..."
+            skopeo copy \
+              --all \
+              --retry-times 3 \
+              "docker://${image}" \
+              "oci-archive:${archive_path}"
+
+            if [[ ! -s "${archive_path}" ]]; then
+              echo "::error::Image archive was not generated: ${archive_path}"
+              exit 1
+            fi
+
+            printf "%s\t%s\n" "${archive_file}" "${image}" \
+              >> "${OUTPUT_DIR}/image-mapping.tsv"
+
+            echo "Successfully downloaded: ${image}"
+          done < image.list
+
+          if [[ "${IMAGE_COUNT}" -eq 0 ]]; then
+            echo "::error::No valid image was found in image.list"
+            exit 1
+          fi
+
+          echo "Downloaded image count: ${IMAGE_COUNT}"
+
+          # 为每个 OCI Archive 生成校验值
+          (
+            cd "${OUTPUT_DIR}"
+            sha256sum images/*.oci.tar > SHA256SUMS
+          )
+
+          echo "Generated files:"
+          find "${OUTPUT_DIR}" -maxdepth 2 -type f \
+            -printf '%p %k KB\n' | sort
+
+      - name: Package downloaded images
+        id: package
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+        run: |
+          set -euo pipefail
+
+          OUTPUT_DIR="multi-arch-images-${RELEASE_VERSION}"
+
+          tar \
+            --create \
+            --gzip \
+            --file "${PACKAGE_NAME}" \
+            "${OUTPUT_DIR}"
+
+          sha256sum "${PACKAGE_NAME}" > "${PACKAGE_NAME}.sha256"
+
+          if [[ ! -s "${PACKAGE_NAME}" ]]; then
+            echo "::error::Release package was not generated"
+            exit 1
+          fi
+
+          echo "Release package:"
+          ls -lh "${PACKAGE_NAME}" "${PACKAGE_NAME}.sha256"
+
+          echo "Package SHA256:"
+          cat "${PACKAGE_NAME}.sha256"
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+        run: |
+          set -euo pipefail
+
+          gh release create "${RELEASE_VERSION}" \
+            "${PACKAGE_NAME}" \
+            "${PACKAGE_NAME}.sha256" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "${RELEASE_VERSION}" \
+            --notes "Multi-architecture container image archive.
+
+          Generated at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Commit: ${GITHUB_SHA}
+          Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          The package contains OCI archives for all valid images defined in image.list."
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+        run: |
+          {
+            echo "## Multi-architecture image release"
+            echo
+            echo "- Release version: \`${RELEASE_VERSION}\`"
+            echo "- Package: \`${PACKAGE_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Release URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_VERSION}"
+          } >> "${GITHUB_STEP_SUMMARY}"
