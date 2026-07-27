@@ -49,8 +49,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! -f "image.list" ]]; then
-            echo "::error::image.list does not exist in the repository root"
+          if [[ ! -f "images.txt" ]]; then
+            echo "::error::images.txt does not exist in the repository root"
             exit 1
           fi
 
@@ -58,7 +58,7 @@ jobs:
           mkdir -p "${OUTPUT_DIR}/images"
 
           # 保存原始镜像列表
-          cp image.list "${OUTPUT_DIR}/image.list"
+          cp images.txt "${OUTPUT_DIR}/images.txt"
 
           # 创建归档文件与原始镜像之间的映射表
           printf "archive_file\tsource_image\n" \
@@ -115,10 +115,10 @@ jobs:
               >> "${OUTPUT_DIR}/image-mapping.tsv"
 
             echo "Successfully downloaded: ${image}"
-          done < image.list
+          done < images.txt
 
           if [[ "${IMAGE_COUNT}" -eq 0 ]]; then
-            echo "::error::No valid image was found in image.list"
+            echo "::error::No valid image was found in images.txt"
             exit 1
           fi
 
@@ -185,7 +185,7 @@ jobs:
           Commit: ${GITHUB_SHA}
           Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          The package contains OCI archives for all valid images defined in image.list."
+          The package contains OCI archives for all valid images defined in images.txt."
 
       - name: Write job summary
         if: always()
