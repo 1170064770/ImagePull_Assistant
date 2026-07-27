@@ -1,0 +1,2 @@
+# 需要下载的容器镜像地址填入下方即可
+# 例如：docker.io/library/busybox:latest
