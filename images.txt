@@ -1,2 +1,4 @@
 # 需要下载的容器镜像地址填入下方即可
 # 例如：docker.io/library/busybox:latest
+quay.io/jetstack/charts/trust-manager:0.24.0
+quay.io/jetstack/trust-pkg-debian-trixie:20250419.1
