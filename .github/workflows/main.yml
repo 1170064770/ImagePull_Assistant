@@ -164,18 +164,64 @@ jobs:
           echo "Package SHA256:"
           cat "${PACKAGE_NAME}.sha256"
 
+          # 如果包过大 (>1.9G)，则用 split 切分为多个部分以便上传
+          MAX_SIZE_BYTES=$((1900 * 1024 * 1024))
+          PACKAGE_SIZE=$(stat -c%s "${PACKAGE_NAME}")
+
+          if [[ "${PACKAGE_SIZE}" -gt "${MAX_SIZE_BYTES}" ]]; then
+            echo "Package is larger than 1.9G (${PACKAGE_SIZE} bytes), splitting into parts..."
+            PREFIX="${PACKAGE_NAME}.part."
+
+            # 使用 split 按 1900M 切分，生成前缀为 ${PACKAGE_NAME}.part.aa, .ab ...
+            split -b 1900M "${PACKAGE_NAME}" "${PREFIX}"
+
+            # 为每个 part 生成校验值
+            sha256sum "${PREFIX}"* > "${PACKAGE_NAME}.parts.sha256"
+
+            echo "Split parts generated:"
+            ls -lh "${PREFIX}"*
+            echo "Parts SHA256:"
+            cat "${PACKAGE_NAME}.parts.sha256"
+
+            # 将 parts 列表保存为步骤输出（以空格分隔）
+            PARTS_LIST=$(printf '%s\n' ${PREFIX}* | tr '\n' ' ')
+            echo "parts=${PARTS_LIST}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "Package size OK: ${PACKAGE_SIZE} bytes"
+            echo "parts=" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Create GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+          PARTS: ${{ steps.package.outputs.parts }}
         run: |
           set -euo pipefail
 
+          # 如果有切分的 parts，则上传 parts，否则上传完整包
+          ASSETS=()
+
+          if [[ -n "${PARTS}" ]]; then
+            echo "Uploading split parts to release..."
+            # 将步骤输出中的 parts 字符串拆分为数组
+            read -r -a PARTS_ARR <<< "${PARTS}"
+            for p in "${PARTS_ARR[@]}"; do
+              ASSETS+=( "${p}" )
+            done
+            # 也上传 parts 的 SHA 文件
+            ASSETS+=( "${PACKAGE_NAME}.parts.sha256" )
+          else
+            echo "Uploading full package to release..."
+            ASSETS+=( "${PACKAGE_NAME}" "${PACKAGE_NAME}.sha256" )
+          fi
+
+          echo "Assets to upload: ${ASSETS[*]}"
+
           gh release create "${RELEASE_VERSION}" \
-            "${PACKAGE_NAME}" \
-            "${PACKAGE_NAME}.sha256" \
+            "${ASSETS[@]}" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "${RELEASE_VERSION}" \
@@ -193,6 +239,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+          PARTS: ${{ steps.package.outputs.parts }}
         run: |
           {
             echo "## Multi-architecture image release"
@@ -201,4 +248,7 @@ jobs:
             echo "- Package: \`${PACKAGE_NAME}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Release URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_VERSION}"
+            if [[ -n "${PARTS}" ]]; then
+              echo "- Parts: ${PARTS}"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
